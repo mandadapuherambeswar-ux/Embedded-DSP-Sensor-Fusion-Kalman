@@ -9,11 +9,48 @@ A high-speed, deterministic **6-DOF / 9-DOF IMU Sensor Fusion Engine** implement
 
 ---
 
-## 🏛️ System Architecture
+## 🔌 Hardware Circuit Diagram & 6-DOF IMU Interface
+
+```
+                                    +3.3V Power Rail
+                                          |
+                      +-------------------+-------------------+
+                      |                   |                   |
+                  [ 4.7kΩ ]           [ 4.7kΩ ]               |
+                      |                   |                  VCC
+                      | (I2C SCL)         | (I2C SDA)         |
+                      +---------+         +---------+         |
+                                |                   |         |
+ +------------------------------+-------------------+---------+-------------------+
+ |                              |                   |         |                   |
+ |                             PB8                 PB9       3V3                  |
+ |                                                                                |
+ |    [ STM32F4 / ESP32 Controller ]                                              |
+ |                                                                                |
+ |                             PA0                 GND                            |
+ +------------------------------+-------------------+-----------------------------+
+                                |                   |
+                           (EXTI0_IRQ)             GND
+                                |                   |
+                                v                   v
+ +------------------------------+-------------------+-----------------------------+
+ |                             INT                 GND                            |
+ |                                                                                |
+ |                    [ MPU-6050 6-Axis MotionTracking IMU ]                      |
+ |                                                                                |
+ |            SCL                      SDA                     AD0                |
+ +-------------+------------------------+-----------------------+-----------------+
+               |                        |                       |
+            (I2C SCL)                (I2C SDA)                 GND (Address 0x68)
+```
+
+---
+
+## 🏛️ System Architecture & EKF Pipeline
 
 ```mermaid
 graph LR
-    subgraph Sensors ["Sensor Input (100 Hz)"]
+    subgraph Sensors ["Sensor Input (100 Hz - 1 kHz)"]
         G["3-Axis Gyroscope (deg/s)"]
         A["3-Axis Accelerometer (g)"]
     end
@@ -41,18 +78,15 @@ graph LR
 
 ---
 
-## ⚡ Core Features
+## ⚡ Hardware Pinout Matrix
 
-1. **Gimbal Lock-Free Quaternion Representation**:
-   - Represents 3D orientation using unit quaternions ($q_0, q_1, q_2, q_3$), eliminating singularity lock.
-   - Integrates Carmack's fast inverse square root (`Fast_InvSqrt`) for sub-microsecond vector normalization.
-2. **Gyroscope Bias & Dynamic Drift Rejection**:
-   - Continuously estimates and subtracts zero-rate gyro drift over time.
-   - Dynamic acceleration gate rejects linear shocks and vibration spikes ($0.2g < ||a|| < 2.0g$).
-3. **Optimized for Embedded MCUs**:
-   - Zero dynamic memory allocation (`malloc`).
-   - RAM footprint: **< 1.2 KB**.
-   - Execution time per update step on STM32F401 (84 MHz): **< 28 µs**.
+| IMU Pin | MCU Pin | Function | Notes |
+| :--- | :--- | :--- | :--- |
+| **MPU-6050 SCL** | `PB8` | I2C1 Clock | 400 kHz Fast-Mode with 4.7kΩ pull-up |
+| **MPU-6050 SDA** | `PB9` | I2C1 Data | 400 kHz Fast-Mode with 4.7kΩ pull-up |
+| **MPU-6050 INT** | `PA0` | Data-Ready Interrupt | EXTI0 rising edge trigger (1 kHz rate) |
+| **MPU-6050 AD0** | `GND` | I2C Address Select | Low = 0x68, High = 0x69 |
+| **MPU-6050 VDD** | `3V3` | Power Supply | 3.3V Regulated Rail |
 
 ---
 
@@ -60,7 +94,7 @@ graph LR
 
 ```bash
 # Compile using GCC
-gcc -O2 -Wall -Wextra -Iinclude src/quaternion_math.c src/ekf_fusion.c src/main.c -lm -o dsp_ekf_fusion
+gcc -O2 -Wall -Wextra -Iinclude src/quaternion_math.c src/ekf_fusion.c src/mpu6050_dma.c src/main.c -lm -o dsp_ekf_fusion
 
 # Run simulation
 ./dsp_ekf_fusion
